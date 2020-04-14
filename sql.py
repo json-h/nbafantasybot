@@ -67,10 +67,13 @@ def find_team_id(t_name, t_server):
     cur.execute("SELECT id FROM teams WHERE name = \"%s\" AND server = \"%s\"", (t_name, t_server))
     return cur.fetchone()
 
-def find_player_ids_on_team(t_server, t_name):
-    t_id = find_team_id(t_name, t_server)
+def find_player_ids_on_team(t_id):
     cur.execute("SELECT pid FROM players WHERE tid = \"%s\"", (t_id))
     return cur.fetchall()
+
+def find_number_of_players_on_team(t_id):
+    cur.execute("SELECT COUNT(*) FROM players WHERE tid = \"%s\"", (t_id))
+    return cur.fetchone()
         
 
 

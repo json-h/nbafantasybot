@@ -3,6 +3,7 @@ import discord
 import config
 import sql
 import nba
+import cogs
 
 bot = commands.Bot(command_prefix='!')
 bot.remove_command('help')
@@ -18,20 +19,11 @@ async def help(ctx):
     embed.add_field(name="!create (name)", value="Creates your team. You can only own one team.", inline=False)
     embed.add_field(name="!delete", value="Deletes your team.", inline=False)
     embed.add_field(name="!addp (player name)", value="Adds the player to your team.", inline=False)
-    embed.add_field(name="!deletep (player name)", value="Deletes the player from your team.", inline=False)
+    embed.add_field(name="!removep (player name)", value="Deletes the player from your team.", inline=False)
     embed.add_field(name="!teams", value="Lists all of the teams currently in the server.", inline=False)
+    embed.add_field(name="!avg (team)", value="Gets the average stats calculated from all the players currently on your team.", inline=False)
     embed.add_field(name="!players (team name)", value="Lists all the players on the specified team. If no team is specified, finds the players from your team.", inline=False)
-    #remove this later
-    embed.add_field(name="!secret", value="shh ! do not use. big mistake .", inline=False)
     embed.set_footer(text="Created by Jason Han (big guy#1196)")
-    await ctx.send(embed=embed)
-
-#remove this later
-@bot.command()
-async def secret(ctx):
-    embed = discord.Embed(title="Uh oh!", color=0x00ff00)
-    embed.set_image(url=f"https://i.imgur.com/Dx6x5dQ.png")
-    embed.add_field(name="You friccin moron.", value="You just got BEANED!!!", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -128,14 +120,20 @@ async def addp(ctx, *p_name):
         embed = discord.Embed(description= "You don't have a team to add players to!", color=0x000000)
         await ctx.send(embed=embed)
         return
+    t_name = sql.find_team_name(t_server, t_owner)[0].strip("'")
+    t_id = sql.find_team_id(t_name, t_server)
+    num_players = sql.find_number_of_players_on_team(t_id)[0]
+    if num_players >= 13:
+        embed = discord.Embed(description= "You can only have up to 13 players on your team.", color=0x000000)
+        await ctx.send(embed=embed)
+        return
     try:
         p_data = nba.search_for_player(player_name)
     except:
         embed = discord.Embed(description="I couldn't find the player \"" + player_name + "\"  :(", color=0x000000)
         await ctx.send(embed=embed)
         return
-    t_name = sql.find_team_name(t_server, t_owner)[0].strip("'")
-    p_id = sql.find_player_ids_on_team(t_server, t_name)
+    p_id = sql.find_player_ids_on_team(t_id)
     for ids in p_id:
         if ids[0] == p_data[0][0]:
             embed = discord.Embed(description=str(p_data[0][1]) + " is already on your team!", color=0x000000)
@@ -147,7 +145,7 @@ async def addp(ctx, *p_name):
     return
 
 @bot.command()
-async def deletep(ctx, *p_name):
+async def removep(ctx, *p_name):
     t_owner = str(ctx.author)
     t_server = str(ctx.guild)
     is_owner = sql.check_if_already_own(t_server, t_owner)
@@ -163,7 +161,8 @@ async def deletep(ctx, *p_name):
         await ctx.send(embed=embed)
         return
     t_name = sql.find_team_name(t_server, t_owner)[0].strip("'")
-    p_id = sql.find_player_ids_on_team(t_server, t_name)
+    t_id = sql.find_team_id(t_name, t_server)
+    p_id = sql.find_player_ids_on_team(t_id)
     for ids in p_id:
         if ids[0] == p_data[0][0]:
             sql.remove_player_from_team(t_server, t_name, p_data[0][0])
@@ -192,18 +191,64 @@ async def players(ctx, *t_name_input):
             await ctx.send(embed=embed)
             return
         t_owner = sql.find_team_owner(t_server, t_name)[0].strip("'")
-    players_on_team = sql.find_player_ids_on_team(t_server, t_name)
+    t_id = sql.find_team_id(t_name, t_server)
+    players_on_team = sql.find_player_ids_on_team(t_id)
     embed = discord.Embed(title=t_name, description=t_owner, color=0x000000)
     if not players_on_team:
         embed.add_field(name = "None", value=":(", inline=True)
     else:
         for player in players_on_team:
             p_data = nba.search_for_player_by_id(player[0])
-            embed.add_field(name="**" + str(p_data[0][2]) + "**", value=str(p_data[0][1]), inline=False)
+            embed.add_field(name="**" + str(p_data[0][2]) + "**", value=str(p_data[0][1]), inline=True)
     await ctx.send(embed=embed)
 
-    
-
+@bot.command()
+async def avg(ctx, *t_name_input):
+    t_server = str(ctx.guild)
+    t_name = " ".join(t_name_input)
+    name_exists = sql.check_if_name_exists(t_server, t_name)
+    if name_exists == False:
+        embed = discord.Embed(description= "That team doesn't exist!", color=0x000000)
+        await ctx.send(embed=embed)
+        return
+    t_owner = sql.find_team_owner(t_server, t_name)[0].strip("'")
+    t_id = sql.find_team_id(t_name, t_server)
+    fgm, fga, ftm, fta, three_pm, pts, reb, ast, stl, blk, tov = (0.0,)*11
+    num_players = 0
+    players_on_team = sql.find_player_ids_on_team(t_id)
+    embed = discord.Embed(title="**" + t_name + "**",description=t_owner + "'s team", color=0x000000)
+    if not players_on_team:
+        embed.add_field(name = "None", value=":(", inline=True)
+        await ctx.send(embed=embed)
+    else:
+        for player in players_on_team:
+            p_data = nba.search_for_player_by_id(player[0])
+            num_players = num_players + 1
+            #fgm = fga * fg%
+            fgm += p_data[0][16] * p_data[0][17]
+            fga += p_data[0][16]
+            #ftm = fta * ft%
+            ftm += p_data[0][18] * p_data[0][19]
+            fta += p_data[0][18]
+            three_pm += p_data[0][15]
+            pts += p_data[0][9]
+            reb += p_data[0][10]
+            ast += p_data[0][11]
+            stl += p_data[0][13]
+            blk += p_data[0][12]
+            tov += p_data[0][14]
+    fgpct = cogs.formatFloat(str(fgm/fga))
+    ftpct = cogs.formatFloat(str(ftm/fta))
+    embed.add_field(name="**FG%**", value=fgpct, inline=True)
+    embed.add_field(name="**FT%**", value=ftpct, inline=True)
+    embed.add_field(name="**3PM**", value="{:.1f}".format(three_pm/num_players), inline=True)
+    embed.add_field(name="**PTS**", value="{:.1f}".format(pts/num_players), inline=True)
+    embed.add_field(name="**REB**", value="{:.1f}".format(reb/num_players), inline=True)
+    embed.add_field(name="**AST**", value="{:.1f}".format(ast/num_players), inline=True)
+    embed.add_field(name="**STL**", value="{:.1f}".format(stl/num_players), inline=True)
+    embed.add_field(name="**BLK**", value="{:.1f}".format(blk/num_players), inline=True)
+    embed.add_field(name="**TOV**", value="{:.1f}".format(tov/num_players), inline=True)
+    await ctx.send(embed=embed)
 
 
 #will be needed if users are allowed to have more than one team
